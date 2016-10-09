@@ -1,3 +1,4 @@
+#include <stdlib.h>
 
 char* generate_cp() {
 	char* hip = malloc(10);

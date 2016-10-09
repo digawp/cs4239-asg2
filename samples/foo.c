@@ -1,21 +1,13 @@
 #include <stdio.h>
 #include "bar.h"
 
-void hoho(){}
-
-void hehe(){
-	hoho();
-}
-
-void hii(){}
-
 int lol() {
 	return 1;
 }
 
 int main(int argc, char const *argv[])
 {
-	// hello();
+	hello();
 	if (lol()) {
 		int a = 0;
 	} else {
