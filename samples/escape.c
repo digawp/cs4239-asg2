@@ -5,7 +5,7 @@ char* generate_cp() {
 	char a = 'a';
 	char arr[3];
 	char* ptr = &a;
-	return &a;
+	return ptr;
 }
 
 int main(int argc, char const *argv[]) {

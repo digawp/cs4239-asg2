@@ -50,10 +50,10 @@ int main(int argc, char **argv) {
     for (auto &bb : F) {
       llvm::outs() << "BB: " << bb << "\n";
       for (auto &i : bb) {
-        // if (llvm::CallInst* callInst = llvm::dyn_cast<llvm::CallInst>(&i)) {
-        //   std::cout << "Found called function: " << callInst->getCalledFunction()->getName().str() << std::endl;
-        //   functions.erase(callInst->getCalledFunction()->getName().str());
-        // }
+        if (llvm::CallInst* callInst = llvm::dyn_cast<llvm::CallInst>(&i)) {
+          std::cout << "Found called function: " << callInst->getCalledFunction()->getName().str() << std::endl;
+          functions.erase(callInst->getCalledFunction()->getName().str());
+        }
       }
     }
   }
@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
   // Assumption: main() always gets called, hence, we exclude main function 
   // from the output
   functions.erase("main");
-
+  std::cout << "Dead:\n";
   printAllFunctions(functions);
   
   // for (auto i = functions.begin(); i != functions.end(); ++i) {
