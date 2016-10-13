@@ -77,11 +77,13 @@ void insert_to_map(llvm::Value* value) {
   }
   NodeType type = VALUE;
 
-  if (!llvm::dyn_cast<llvm::AllocaInst>(value)->getAllocatedType()->isPointerTy()) {
-    llvm::outs() << "Value: " << *value << "\n";
-    llvm::outs() << "Type: " << *value->getType() << "\n";
-    std::cout << "Considered non-pointer" << std::endl;
-    type = PRIMITIVE;
+  if (auto alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(value)) {
+    if (!alloca_inst->getAllocatedType()->isPointerTy()) {
+      llvm::outs() << "Value: " << *value << "\n";
+      llvm::outs() << "Type: " << *value->getType() << "\n";
+      std::cout << "Considered non-pointer" << std::endl;
+      type = PRIMITIVE;
+    }
   }
 
   Node node = {
