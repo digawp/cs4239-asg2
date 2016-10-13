@@ -36,14 +36,13 @@ llvm::Value* traverse_graph(Node start_node) {
   Node cur;
   while (!q.empty()) {
     cur = q.front();
-    llvm::outs() << "Cur val: " << *cur.llvm_value << "\n";
     for (auto next = cur.neighbours.begin(); next != cur.neighbours.end(); next++) {
-      llvm::outs() << *node_map[*next].llvm_value << "\n";
-      llvm::outs() << "From " << *cur.llvm_value << "\n";
-      if (node_map[*next].type == PRIMITIVE) {
-        std::cout << "Ketemu primitip" << std::endl;
-        break;
-      }
+      // llvm::outs() << "Current: " << *cur.llvm_value << "\n";
+      // llvm::outs() << "Next: " << *node_map[*next].llvm_value << "\n";
+      // if (node_map[*next].type == PRIMITIVE) {
+      //   std::cout << "Ketemu primitip" << std::endl;
+      //   break;
+      // }
       q.push(node_map[*next]);
     }
     q.pop();
@@ -59,7 +58,7 @@ llvm::Value* check_last_instruction(llvm::Value* last_val) {
   
   // if (llvm::CallInst* call_inst = llvm::dyn_cast<llvm::CallInst>(end_node.llvm_value)) {
   //   if (llvm::Function* called_fn = call_inst->getCalledFunction()) {
-  //     if (llvm::dyn_cast<llvm::PointerType>(called_fn->getReturnType())) {
+  //     if (called_fn->getReturnType()->isPointerTy()) {
   //       return end_node.llvm_value;
   //     }
   //   }
@@ -67,16 +66,39 @@ llvm::Value* check_last_instruction(llvm::Value* last_val) {
   return nullptr;
 }
 
+/**
+ * Check if value is an alloca instruction, if yes, check if it is of pointer type.
+ * Insert to the node_map afterwards.
+ * Do nothing if value alr exist in node_map
+ */
+void insert_to_map(llvm::Value* value) {
+  if (node_map.find(value) != node_map.end()) {
+    return;
+  }
+  NodeType type = VALUE;
+
+  if (!llvm::dyn_cast<llvm::AllocaInst>(value)->getAllocatedType()->isPointerTy()) {
+    llvm::outs() << "Value: " << *value << "\n";
+    llvm::outs() << "Type: " << *value->getType() << "\n";
+    std::cout << "Considered non-pointer" << std::endl;
+    type = PRIMITIVE;
+  }
+
+  Node node = {
+    .type = type,
+    .llvm_value = value
+  };
+  node_map.insert(std::make_pair(value, node));
+}
+
 void create_graph(llvm::Function* fn) {
   std::cout << "Creating graph" << std::endl;
+
   // Initialize initial nodes: vars explicitly initialized on stack
   for (auto val_ptr = fn->getValueSymbolTable().begin();
       val_ptr != fn->getValueSymbolTable().end(); ++val_ptr) {
-    Node src_node = {
-      .type = VALUE,
-      .llvm_value = val_ptr->getValue()
-    };
-    node_map.insert(std::make_pair(src_node.llvm_value, src_node));
+    llvm::Value* value = val_ptr->getValue();
+    insert_to_map(value);
   }
 
   for (llvm::inst_iterator iit = llvm::inst_begin(fn), E = llvm::inst_end(fn); iit != E; ++iit) {
@@ -84,29 +106,35 @@ void create_graph(llvm::Function* fn) {
       llvm::Value* pointer = store_inst->getPointerOperand();
       llvm::Value* value = store_inst->getValueOperand();
 
-      if (node_map.find(pointer) == node_map.end()) {
-        Node src_node = {
-          .type = VALUE,
-          .llvm_value = pointer
-        };
-        node_map.insert(std::make_pair(pointer, src_node));
+      auto val_node_pair = node_map.find(pointer);
+      if (val_node_pair != node_map.end() &&
+          val_node_pair->second.type == PRIMITIVE) {
+        // Already primitive type, skip to the next instruction
+        continue;
       }
-
-      if (node_map.find(value) == node_map.end()) {
-        NodeType type = VALUE;
-        llvm::outs() << *value << "\n";
-        if (llvm::dyn_cast<llvm::IntegerType>(value->getType())) {
-          std::cout << "Primitive!" << std::endl;
-          type = PRIMITIVE;
-        }
-        Node dst_node = {
-          .type = type,
-          .llvm_value = value
-        };
-        node_map.insert(std::make_pair(value, dst_node));
-      }
+      insert_to_map(pointer);
+      insert_to_map(value);
       llvm::outs() << *pointer << " points to " << *value << "\n";
       node_map[pointer].neighbours.push_back(value);
+    }
+    if (auto get_el_ptr_inst = llvm::dyn_cast<llvm::GetElementPtrInst>(&*iit)) {
+      llvm::Value* pointer = get_el_ptr_inst->getPointerOperand();
+      // llvm::outs() << "LHS: " << *iit << "\n";
+      // llvm::outs() << "RHS: " << *pointer << "\n";
+      if (node_map.find(pointer) == node_map.end()) {
+        std::cout << "Check RHS again" << std::endl;
+      }
+      // iit is an intermediate value
+      if (node_map.find(&*iit) == node_map.end()) {
+        NodeType type = VALUE;
+        Node dst_node = {
+          .type = type,
+          .llvm_value = &*iit
+        };
+        node_map.insert(std::make_pair(&*iit, dst_node));
+      }
+      llvm::outs() << *iit << " points to " << *pointer << "\n";
+      node_map[&*iit].neighbours.push_back(pointer);
     }
   }
   std::cout << "End creating graph" << std::endl;
@@ -139,7 +167,9 @@ int main(int argc, char const *argv[]) {
         e = M->getFunctionList().end(); f_it != e; ++f_it) {
       std::cout << "Declared function: " << f_it->getName().str() << std::endl;
       llvm::Function& func = *f_it;
-      if (!(llvm::dyn_cast<llvm::PointerType>(func.getReturnType()))) {
+      if (!func.getReturnType()->isPointerTy() ||
+          func.getBasicBlockList().empty() ||
+          func.getValueSymbolTable().empty()) {
         continue;
       }
       create_graph(&func);
@@ -149,13 +179,14 @@ int main(int argc, char const *argv[]) {
           llvm::Value* retVal = retInst->getReturnValue();
           if (auto loadRetValInst = llvm::dyn_cast<llvm::LoadInst>(retVal)) {
             llvm::Value* actualRetVal = loadRetValInst->getPointerOperand();
-            llvm::outs() << "Actual retval: " << *actualRetVal << "\n";
+            // llvm::outs() << "Actual retval: " << *actualRetVal << "\n";
             starting_node = node_map[actualRetVal];
             break;
           }
         }
       }
-      llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
+
+      // llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
       llvm::Value* ending_node = traverse_graph(starting_node);
       // llvm::Value* res = check_last_instruction(ending_node);
       llvm::outs() << "Result: " << *ending_node << "\n";
