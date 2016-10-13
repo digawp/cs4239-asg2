@@ -119,24 +119,21 @@ void create_graph(llvm::Function* fn) {
       llvm::outs() << *pointer << " points to " << *value << "\n";
       node_map[pointer].neighbours.push_back(value);
     }
+
+    // get_el_ptr_inst is an intermediate value
     if (auto get_el_ptr_inst = llvm::dyn_cast<llvm::GetElementPtrInst>(&*iit)) {
       llvm::Value* pointer = get_el_ptr_inst->getPointerOperand();
       // llvm::outs() << "LHS: " << *iit << "\n";
       // llvm::outs() << "RHS: " << *pointer << "\n";
       if (node_map.find(pointer) == node_map.end()) {
+        // RHS must be a pointer to an existing thing in the stack (for now)
         std::cout << "Check RHS again" << std::endl;
       }
-      // iit is an intermediate value
-      if (node_map.find(&*iit) == node_map.end()) {
-        NodeType type = VALUE;
-        Node dst_node = {
-          .type = type,
-          .llvm_value = &*iit
-        };
-        node_map.insert(std::make_pair(&*iit, dst_node));
-      }
-      llvm::outs() << *iit << " points to " << *pointer << "\n";
-      node_map[&*iit].neighbours.push_back(pointer);
+      insert_to_map(get_el_ptr_inst);
+      // Uncomment if decide to tackle listing 3
+      // insert_to_map(pointer);
+      llvm::outs() << *get_el_ptr_inst << " points to " << *pointer << "\n";
+      node_map[get_el_ptr_inst].neighbours.push_back(pointer);
     }
   }
   std::cout << "End creating graph" << std::endl;
@@ -190,11 +187,13 @@ int main(int argc, char const *argv[]) {
 
       // llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
       llvm::Value* ending_node = traverse_graph(starting_node);
-      // llvm::Value* res = check_last_instruction(ending_node);
+      ending_node = check_last_instruction(ending_node);
       llvm::outs() << "Result: " << *ending_node << "\n";
-      std::cout << "Warning: returning a pointer to a variable in a stack." << std::endl;
-      std::cout << "Returning " << starting_node.llvm_value->getName().str() << " which points to ";
-      std::cout << ending_node->getName().str() << std::endl;
+      if (ending_node) {
+        std::cout << "Warning: returning a pointer to a variable in a stack." << std::endl;
+        std::cout << "Returning " << starting_node.llvm_value->getName().str() << " which points to ";
+        std::cout << ending_node->getName().str() << std::endl;
+      }
     }
   }
 
