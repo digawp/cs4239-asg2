@@ -1,4 +1,4 @@
-all: task1 task2
+all: task1 task2 sample
 
 TASK1 = task1
 TASK2 = task2
