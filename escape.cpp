@@ -48,7 +48,8 @@ std::vector<llvm::Value*> traverse_graph(Node start_node) {
 }
 
 llvm::Value* check_last_instruction(llvm::Value* last_val) {
-  if (node_map[last_val].type == PRIMITIVE) { // if primitive type
+  if (node_map.find(last_val) != node_map.end() &&
+    node_map.find(last_val)->second.type == PRIMITIVE) { // if primitive type
     return last_val;
   }
   return nullptr;
@@ -160,13 +161,17 @@ int main(int argc, char const *argv[]) {
     std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
     for (auto f_it = M->getFunctionList().begin(),
         e = M->getFunctionList().end(); f_it != e; ++f_it) {
+      std::cout << "=====" << std::endl;
       std::cout << "Declared function: " << f_it->getName().str() << std::endl;
       llvm::Function& func = *f_it;
+
+      // If return type not pointer, or just a declaration, skip it
       if (!func.getReturnType()->isPointerTy() ||
           func.getBasicBlockList().empty() ||
           func.getValueSymbolTable().empty()) {
         continue;
       }
+
       create_graph(&func);
 
       for (llvm::inst_iterator I = llvm::inst_begin(&func);
@@ -175,7 +180,7 @@ int main(int argc, char const *argv[]) {
           llvm::Value* retVal = retInst->getReturnValue();
           Node& starting_node = node_map.find(retVal)->second;
           llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
-          
+
           std::vector<llvm::Value*> leaked_vars = traverse_graph(starting_node);
           for (auto val_ptr : leaked_vars) {
             llvm::Value* val = check_last_instruction(val_ptr);
