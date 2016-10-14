@@ -55,14 +55,6 @@ llvm::Value* check_last_instruction(llvm::Value* last_val) {
   if (node_map[last_val].type == PRIMITIVE) { // if primitive type
     return last_val;
   }
-  
-  // if (llvm::CallInst* call_inst = llvm::dyn_cast<llvm::CallInst>(end_node.llvm_value)) {
-  //   if (llvm::Function* called_fn = call_inst->getCalledFunction()) {
-  //     if (called_fn->getReturnType()->isPointerTy()) {
-  //       return end_node.llvm_value;
-  //     }
-  //   }
-  // }
   return nullptr;
 }
 
@@ -120,20 +112,32 @@ void create_graph(llvm::Function* fn) {
       node_map[pointer].neighbours.push_back(value);
     }
 
-    // get_el_ptr_inst is an intermediate value
-    if (auto get_el_ptr_inst = llvm::dyn_cast<llvm::GetElementPtrInst>(&*iit)) {
-      llvm::Value* pointer = get_el_ptr_inst->getPointerOperand();
-      // llvm::outs() << "LHS: " << *iit << "\n";
-      // llvm::outs() << "RHS: " << *pointer << "\n";
+    // get_ptr_inst includes getElementPtr and load instructions
+    // They are just intermediate values
+    if (auto get_ptr_inst = llvm::dyn_cast<llvm::GetElementPtrInst>(&*iit)) {
+      llvm::Value* pointer = get_ptr_inst->getPointerOperand();
       if (node_map.find(pointer) == node_map.end()) {
         // RHS must be a pointer to an existing thing in the stack (for now)
         std::cout << "Check RHS again" << std::endl;
       }
-      insert_to_map(get_el_ptr_inst);
+      insert_to_map(get_ptr_inst);
       // Uncomment if decide to tackle listing 3
       // insert_to_map(pointer);
-      llvm::outs() << *get_el_ptr_inst << " points to " << *pointer << "\n";
-      node_map[get_el_ptr_inst].neighbours.push_back(pointer);
+      llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
+      node_map[get_ptr_inst].neighbours.push_back(pointer);
+    }
+
+    if (auto get_ptr_inst = llvm::dyn_cast<llvm::LoadInst>(&*iit)) {
+      llvm::Value* pointer = get_ptr_inst->getPointerOperand();
+      if (node_map.find(pointer) == node_map.end()) {
+        // RHS must be a pointer to an existing thing in the stack (for now)
+        std::cout << "Check RHS again" << std::endl;
+      }
+      insert_to_map(get_ptr_inst);
+      // Uncomment if decide to tackle listing 3
+      // insert_to_map(pointer);
+      llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
+      node_map[get_ptr_inst].neighbours.push_back(pointer);
     }
   }
   std::cout << "End creating graph" << std::endl;
@@ -180,6 +184,10 @@ int main(int argc, char const *argv[]) {
             llvm::Value* actualRetVal = loadRetValInst->getPointerOperand();
             // llvm::outs() << "Actual retval: " << *actualRetVal << "\n";
             starting_node = node_map[actualRetVal];
+            break;
+          } else {
+            std::cout << "Didn't expect to reach here" << std::endl;
+            starting_node = node_map[retVal];
             break;
           }
         }
