@@ -1,8 +1,6 @@
 #include <iostream>
 #include <queue>
 #include <unordered_map>
-#include <unordered_set>
-#include <utility>
 
 #include "llvm/DebugInfo.h"
 #include "llvm/IR/Function.h"
@@ -11,7 +9,6 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
 #include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/IRReader/IRReader.h"
