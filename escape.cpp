@@ -27,25 +27,24 @@ typedef struct {
 
 std::unordered_map<llvm::Value*, Node> node_map;
 
-llvm::Value* traverse_graph(Node start_node) {
+std::vector<llvm::Value*> traverse_graph(Node start_node) {
+  std::vector<llvm::Value*> result;
   std::queue<Node> q;
   q.push(start_node);
   Node cur;
   while (!q.empty()) {
     cur = q.front();
+    if (cur.type == PRIMITIVE) {
+      result.push_back(cur.llvm_value);
+    }
     for (auto next = cur.neighbours.begin(); next != cur.neighbours.end(); next++) {
       // llvm::outs() << "Current: " << *cur.llvm_value << "\n";
       // llvm::outs() << "Next: " << *node_map[*next].llvm_value << "\n";
-      // if (node_map[*next].type == PRIMITIVE) {
-      //   std::cout << "Ketemu primitip" << std::endl;
-      //   break;
-      // }
-      q.push(node_map[*next]);
+      q.push(node_map.find(*next)->second);
     }
     q.pop();
   }
-
-  return cur.llvm_value;
+  return result;
 }
 
 llvm::Value* check_last_instruction(llvm::Value* last_val) {
@@ -173,31 +172,24 @@ int main(int argc, char const *argv[]) {
         continue;
       }
       create_graph(&func);
-      Node starting_node;
-      for (llvm::inst_iterator I = llvm::inst_begin(&func); I != llvm::inst_end(&func); ++I) {
+
+      for (llvm::inst_iterator I = llvm::inst_begin(&func);
+          I != llvm::inst_end(&func); ++I) {
         if (auto retInst = llvm::dyn_cast<llvm::ReturnInst>(&*I)) {
           llvm::Value* retVal = retInst->getReturnValue();
-          if (auto loadRetValInst = llvm::dyn_cast<llvm::LoadInst>(retVal)) {
-            llvm::Value* actualRetVal = loadRetValInst->getPointerOperand();
-            // llvm::outs() << "Actual retval: " << *actualRetVal << "\n";
-            starting_node = node_map[actualRetVal];
-            break;
-          } else {
-            std::cout << "Didn't expect to reach here" << std::endl;
-            starting_node = node_map[retVal];
-            break;
+          Node& starting_node = node_map.find(retVal)->second;
+          llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
+          
+          std::vector<llvm::Value*> leaked_vars = traverse_graph(starting_node);
+          for (auto val_ptr : leaked_vars) {
+            llvm::Value* val = check_last_instruction(val_ptr);
+            llvm::outs() << "Result: " << *val << "\n";
+            if (val) {
+              std::cout << "Warning: returning a pointer which points to ";
+              std::cout << val->getName().str() << std::endl;
+            }
           }
         }
-      }
-
-      // llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
-      llvm::Value* ending_node = traverse_graph(starting_node);
-      ending_node = check_last_instruction(ending_node);
-      llvm::outs() << "Result: " << *ending_node << "\n";
-      if (ending_node) {
-        std::cout << "Warning: returning a pointer to a variable in a stack." << std::endl;
-        std::cout << "Returning " << starting_node.llvm_value->getName().str() << " which points to ";
-        std::cout << ending_node->getName().str() << std::endl;
       }
     }
   }
