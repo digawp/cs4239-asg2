@@ -67,9 +67,9 @@ void insert_to_map(llvm::Value* value) {
 
   if (auto alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(value)) {
     if (!alloca_inst->getAllocatedType()->isPointerTy()) {
-      llvm::outs() << "Value: " << *value << "\n";
-      llvm::outs() << "Type: " << *value->getType() << "\n";
-      std::cout << "Considered non-pointer" << std::endl;
+      // llvm::outs() << "Value: " << *value << "\n";
+      // llvm::outs() << "Type: " << *value->getType() << "\n";
+      // std::cout << "Considered primitive" << std::endl;
       type = PRIMITIVE;
     }
   }
@@ -81,8 +81,20 @@ void insert_to_map(llvm::Value* value) {
   node_map.insert(std::make_pair(value, node));
 }
 
+void handle_intermediate_node(llvm::Value* intermediate, llvm::Value* actual) {
+  if (node_map.find(actual) == node_map.end()) {
+    // RHS must be a pointer to an existing thing in the stack (for now)
+    std::cout << "Check RHS again" << std::endl;
+  }
+  insert_to_map(intermediate);
+  // Uncomment if decide to tackle listing 3
+  // insert_to_map(pointer);
+  // llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
+  node_map[intermediate].neighbours.push_back(actual);
+}
+
 void create_graph(llvm::Function* fn) {
-  std::cout << "Creating graph" << std::endl;
+  // std::cout << "Creating graph" << std::endl;
 
   // Initialize initial nodes: vars explicitly initialized on stack
   for (auto val_ptr = fn->getValueSymbolTable().begin();
@@ -104,39 +116,23 @@ void create_graph(llvm::Function* fn) {
       }
       insert_to_map(pointer);
       insert_to_map(value);
-      llvm::outs() << *pointer << " points to " << *value << "\n";
-      node_map[pointer].neighbours.push_back(value);
+      // llvm::outs() << *pointer << " points to " << *value << "\n";
+      node_map.find(pointer)->second.neighbours.push_back(value);
     }
 
     // get_ptr_inst includes getElementPtr and load instructions
     // They are just intermediate values
     if (auto get_ptr_inst = llvm::dyn_cast<llvm::GetElementPtrInst>(&*iit)) {
       llvm::Value* pointer = get_ptr_inst->getPointerOperand();
-      if (node_map.find(pointer) == node_map.end()) {
-        // RHS must be a pointer to an existing thing in the stack (for now)
-        std::cout << "Check RHS again" << std::endl;
-      }
-      insert_to_map(get_ptr_inst);
-      // Uncomment if decide to tackle listing 3
-      // insert_to_map(pointer);
-      llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
-      node_map[get_ptr_inst].neighbours.push_back(pointer);
+      handle_intermediate_node(get_ptr_inst, pointer);
     }
 
     if (auto get_ptr_inst = llvm::dyn_cast<llvm::LoadInst>(&*iit)) {
       llvm::Value* pointer = get_ptr_inst->getPointerOperand();
-      if (node_map.find(pointer) == node_map.end()) {
-        // RHS must be a pointer to an existing thing in the stack (for now)
-        std::cout << "Check RHS again" << std::endl;
-      }
-      insert_to_map(get_ptr_inst);
-      // Uncomment if decide to tackle listing 3
-      // insert_to_map(pointer);
-      llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
-      node_map[get_ptr_inst].neighbours.push_back(pointer);
+      handle_intermediate_node(get_ptr_inst, pointer);
     }
   }
-  std::cout << "End creating graph" << std::endl;
+  // std::cout << "End creating graph" << std::endl;
 }
 
 int main(int argc, char const *argv[]) {
