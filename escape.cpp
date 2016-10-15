@@ -191,13 +191,12 @@ int main(int argc, char const *argv[]) {
     #ifndef NDEBUG
     std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
     #endif
-    NodeMapType node_map;
     for (auto f_it = M->getFunctionList().begin(),
         e = M->getFunctionList().end(); f_it != e; ++f_it) {
       #ifndef NDEBUG
-      std::cout << "=====" << std::endl;
       std::cout << "Declared function: " << f_it->getName().str() << std::endl;
       #endif
+      NodeMapType node_map;
       llvm::Function& func = *f_it;
 
       // If return type not pointer, or just a declaration, or has no local
@@ -213,21 +212,19 @@ int main(int argc, char const *argv[]) {
 
       for (auto val_ptr : ret_vals) {
         Node& starting_node = node_map.find(val_ptr)->second;
-        llvm::outs() << "Starting val: " << *starting_node.llvm_value << "\n";
 
         std::vector<llvm::Value*> leaked_vars =
             traverse_graph(node_map, starting_node);
         for (auto val_ptr : leaked_vars) {
           llvm::Value* val = check_last_instruction(node_map, val_ptr);
-          llvm::outs() << "Result: " << *val << "\n";
           if (val) {
             std::cout << "Warning: returning a pointer which points to ";
             std::cout << val->getName().str() << std::endl;
           }
-        }
-      }
-    }
-  }
+        } // for all leaked vars
+      } // for all possible return values
+    } // for all functions
+  } // for all modules
 
 	return 0;
 }
