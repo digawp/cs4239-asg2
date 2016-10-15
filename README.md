@@ -26,6 +26,8 @@
 
 ## Others
 
+### mainy.cpp
+
 `mainy.cpp` is the code used to observe Function, BB, Instructions.
 
 Build:
@@ -35,6 +37,12 @@ Build:
 Run:
 
 	./a.out <ll file>
+
+### Build everything for assignment deliverables
+
+	make
+
+Will make `task1`, `task2`, and `sample`.
 
 ### Collaborators
 
