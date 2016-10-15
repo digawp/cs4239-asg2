@@ -1,3 +1,4 @@
+#include <cassert>
 #include <iostream>
 #include <unordered_set>
 #include <queue>
@@ -13,17 +14,31 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SourceMgr.h"
 
+
 // Get declarations and definitions of the specified function_name inside the
 // specified Modules.
-std::vector<llvm::Function*> getDeclsAndDefs(
+
+/**
+ * @brief      Gets the llvm::Function* to the definition of fn_name.
+ *
+ * This method assumes that there is only one definition per function name
+ * (which is true in the case of C). If not, it returns the first function
+ * definition found in the list of modules.
+ *
+ * @param[in]  modules  List of all modules
+ * @param[in]  fn_name  The function name
+ *
+ * @return
+ */
+llvm::Function* get_function_definition(
     const std::vector<llvm::Module*>& modules, const std::string& fn_name) {
-  std::vector<llvm::Function*> res;
   for (auto& mod : modules) {
-    if (auto func = mod->getFunction(fn_name)) {
-      res.push_back(func);
+    auto func = mod->getFunction(fn_name);
+    if (func && !func->isDeclaration()) {
+      return func;
     }
   }
-  return res;
+  return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -50,7 +65,8 @@ int main(int argc, char **argv) {
   std::unordered_set<std::string> functions;
   std::queue<std::string> q;
 
-  // Store all functions in a set.
+  // Store all functions in a set. The function will be removed from the set if
+  // it is found to be called when we trace the call graph.
   for (auto& M : modules){
     std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
     for (auto f_it = M->getFunctionList().begin(),
@@ -67,29 +83,21 @@ int main(int argc, char **argv) {
     std::string function_name = q.front();
     q.pop();
 
-    // We get all the instance of declarations and definitions of a function
-    // because we can't differentiate between forward declaration and the actual
-    // definition, sadly (TODO: check if this is true!)
-    // The expectation is that for forward declaration, it will not go into the
-    // nested for loop (because it has no basic block or instruction), and
-    // thus the deepest nested for loop will only execute for one of those
-    // instances (the definition instance).
-    std::vector<llvm::Function*> func_decls_defs =
-        getDeclsAndDefs(modules, function_name);
-    for (auto& f : func_decls_defs){
-      for (auto &bb : *f) {
-        for (auto &i : bb) {
-          if (llvm::CallInst* callInst = llvm::dyn_cast<llvm::CallInst>(&i)) {
-            std::string called_function_name =
-                callInst->getCalledFunction()->getName().str();
-            // Remove function from functions set if it is called.
-            if (functions.erase(called_function_name) == 1) {
-              q.push(called_function_name);
-            }
-          } // if isa<CallInst>(i)
-        } // for i in bb
-      } // for bb in *f
-    } // for f in func_decls_defs
+    llvm::Function* f = get_function_definition(modules, function_name);
+    assert(f);
+
+    for (auto &bb : *f) {
+      for (auto &i : bb) {
+        if (llvm::CallInst* callInst = llvm::dyn_cast<llvm::CallInst>(&i)) {
+          std::string called_function_name =
+              callInst->getCalledFunction()->getName().str();
+          // Remove function from the functions set if it is called.
+          if (functions.erase(called_function_name) == 1) {
+            q.push(called_function_name);
+          }
+        } // if isa<CallInst>(i)
+      } // for i in bb
+    } // for bb in *f
   } // while
 
   functions.erase("main");
