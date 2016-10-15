@@ -15,20 +15,17 @@
 #include "llvm/Support/SourceMgr.h"
 
 
-// Get declarations and definitions of the specified function_name inside the
-// specified Modules.
-
 /**
- * @brief      Gets the llvm::Function* to the definition of fn_name.
+ * @brief      Gets the llvm::Function* of fn_name.
  *
  * This method assumes that there is only one definition per function name
- * (which is true in the case of C). If not, it returns the first function
+ * (which is the case for C). If not, it returns the first function
  * definition found in the list of modules.
  *
  * @param[in]  modules  List of all modules
  * @param[in]  fn_name  The function name
  *
- * @return
+ * @return NULL if fn_name does not exist in any of the modules
  */
 llvm::Function* get_function_definition(
     const std::vector<llvm::Module*>& modules, const std::string& fn_name) {
@@ -57,16 +54,13 @@ int main(int argc, char **argv) {
   }
 
   if (modules.size() == 0) {
-    // No legit ll file
     fprintf(stderr, "No appropriate IR file supplied\n");
     return 1;
   }
 
-  std::unordered_set<std::string> functions;
-  std::queue<std::string> q;
-
   // Store all functions in a set. The function will be removed from the set if
-  // it is found to be called when we trace the call graph.
+  // it is found to be used when we trace the call graph.
+  std::unordered_set<std::string> functions;
   for (auto& M : modules){
     std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
     for (auto f_it = M->getFunctionList().begin(),
@@ -76,7 +70,8 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Initialize first function to be visited
+  // Initialize queue of functions to be traced
+  std::queue<std::string> q;
   q.push("main");
 
   while (!q.empty()) {
@@ -84,19 +79,25 @@ int main(int argc, char **argv) {
     q.pop();
 
     llvm::Function* f = get_function_definition(modules, function_name);
+
+    // f should never be NULL
     assert(f);
 
-    for (auto &bb : *f) {
-      for (auto &i : bb) {
-        if (llvm::CallInst* callInst = llvm::dyn_cast<llvm::CallInst>(&i)) {
-          std::string called_function_name =
-              callInst->getCalledFunction()->getName().str();
-          // Remove function from the functions set if it is called.
-          if (functions.erase(called_function_name) == 1) {
-            q.push(called_function_name);
-          }
-        } // if isa<CallInst>(i)
-      } // for i in bb
+    // Iterate through all instructions in the function.
+    for (auto& bb : *f) {
+      for (auto& inst : bb) {
+        for (auto op_idx = 0; op_idx < inst.getNumOperands(); ++op_idx) {
+          auto val = inst.getOperand(op_idx);
+          if (llvm::dyn_cast<llvm::Function>(val)) {
+            std::string used_function_name = val->getName().str();
+            // Remove function from the functions set if it is used by
+            // the instruction.
+            if (functions.erase(used_function_name) == 1) {
+              q.push(used_function_name);
+            }
+          } // if dyn_cast<Function>
+        } // for all operands
+      } // for inst in bb
     } // for bb in *f
   } // while
 
