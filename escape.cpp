@@ -50,8 +50,8 @@ std::vector<llvm::Value*> traverse_graph(NodeMapType& node_map, Node start_node)
 
     for (auto val_ptr : cur.neighbours) {
       #ifndef NDEBUG
-      // llvm::outs() << "Current: " << *cur.llvm_value << "\n";
-      // llvm::outs() << "Next: " << *node_map[val_ptr].llvm_value << "\n";
+      llvm::outs() << "Current: " << *cur.llvm_value << "\n";
+      llvm::outs() << "Next: " << *node_map[val_ptr].llvm_value << "\n";
       #endif
       if (!is_visited[val_ptr]) {
         q.push(node_map.find(val_ptr)->second);
@@ -86,9 +86,6 @@ void insert_to_map(NodeMapType& node_map, llvm::Value* value) {
   // not a pointer.
   if (auto alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(value)) {
     if (!alloca_inst->getAllocatedType()->isPointerTy()) {
-      // llvm::outs() << "Value: " << *value << "\n";
-      // llvm::outs() << "Type: " << *value->getType() << "\n";
-      // std::cout << "Considered primitive" << std::endl;
       type = PRIMITIVE;
     }
   }
@@ -103,13 +100,15 @@ void insert_to_map(NodeMapType& node_map, llvm::Value* value) {
 void make_edge(NodeMapType& node_map, llvm::Value* from, llvm::Value* to) {
   insert_to_map(node_map, from);
   insert_to_map(node_map, to);
-  // llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
+  #ifndef NDEBUG
+  llvm::outs() << *from << " points to " << *to << "\n";
+  #endif
   node_map[from].neighbours.push_back(to);
 }
 
 void create_graph(NodeMapType& node_map, llvm::Function* fn) {
   #ifndef NDEBUG
-  // std::cout << "Creating graph" << std::endl;
+  std::cout << "Creating graph" << std::endl;
   #endif
 
   // Initialize initial nodes: vars explicitly initialized on stack
@@ -137,7 +136,9 @@ void create_graph(NodeMapType& node_map, llvm::Function* fn) {
       make_edge(node_map, get_ptr_inst, pointer);
     }
   }
-  // std::cout << "End creating graph" << std::endl;
+  #ifndef NDEBUG
+  std::cout << "End creating graph" << std::endl;
+  #endif
 }
 
 std::vector<llvm::Value*> get_possible_return_values(llvm::Function& fn) {
@@ -149,6 +150,24 @@ std::vector<llvm::Value*> get_possible_return_values(llvm::Function& fn) {
     }
   }
   return result;
+}
+
+void add_globals(llvm::Module* module, NodeMapType& node_map) {
+  for (auto& global : module->getGlobalList()) {
+    if (auto global_val = llvm::dyn_cast<llvm::Value>(&global)) {
+      insert_to_map(node_map, global_val);
+    }
+  }
+}
+
+void add_global_pointers(llvm::Module* module, std::vector<llvm::Value*>& values) {
+  for (auto& global : module->getGlobalList()) {
+    if (auto global_val = llvm::dyn_cast<llvm::Value>(&global)) {
+      if (global_val->getType()->isPointerTy()) {
+        values.push_back(global_val);
+      }
+    }
+  }
 }
 
 int main(int argc, char const *argv[]) {
@@ -187,20 +206,28 @@ int main(int argc, char const *argv[]) {
       NodeMapType node_map;
       llvm::Function& func = *f_it;
 
-      // If return type not pointer, or just a declaration, or has no local
-      // variables, skip it
-      if (!func.getReturnType()->isPointerTy() ||
-          func.getBasicBlockList().empty() ||
+      // If function is just a declaration, or has no local variables, skip it
+      if (func.getBasicBlockList().empty() ||
           func.getValueSymbolTable().empty()) {
         continue;
       }
 
       create_graph(node_map, &func);
-      std::vector<llvm::Value*> ret_vals = get_possible_return_values(func);
 
-      for (auto val_ptr : ret_vals) {
+      // The values that we should check if it causes local variable address to
+      // be leaked. This includes the return values (if the function returns a
+      // pointer type) as well as the globals
+      std::vector<llvm::Value*> start_vals;
+
+      if (func.getReturnType()->isPointerTy()) {
+         start_vals = get_possible_return_values(func);
+      }
+
+      add_globals(M, node_map);
+      add_global_pointers(M, start_vals);
+
+      for (auto val_ptr : start_vals) {
         Node& starting_node = node_map.find(val_ptr)->second;
-
         std::vector<llvm::Value*> leaked_vars =
             traverse_graph(node_map, starting_node);
         for (auto val_ptr : leaked_vars) {
