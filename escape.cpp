@@ -50,8 +50,8 @@ std::vector<llvm::Value*> traverse_graph(NodeMapType& node_map, Node start_node)
 
     for (auto val_ptr : cur.neighbours) {
       #ifndef NDEBUG
-      llvm::outs() << "Current: " << *cur.llvm_value << "\n";
-      llvm::outs() << "Next: " << *node_map[val_ptr].llvm_value << "\n";
+      // llvm::outs() << "Current: " << *cur.llvm_value << "\n";
+      // llvm::outs() << "Next: " << *node_map[val_ptr].llvm_value << "\n";
       #endif
       if (!is_visited[val_ptr]) {
         q.push(node_map.find(val_ptr)->second);
@@ -81,6 +81,9 @@ void insert_to_map(NodeMapType& node_map, llvm::Value* value) {
   }
   NodeType type = VALUE;
 
+  // This block is to handle initial insertion of values from the function's
+  // local variables. Set the NodeType to PRIMITIVE if the local variable is
+  // not a pointer.
   if (auto alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(value)) {
     if (!alloca_inst->getAllocatedType()->isPointerTy()) {
       // llvm::outs() << "Value: " << *value << "\n";
@@ -97,23 +100,16 @@ void insert_to_map(NodeMapType& node_map, llvm::Value* value) {
   node_map.insert(std::make_pair(value, node));
 }
 
-void handle_intermediate_node(
-    NodeMapType& node_map, llvm::Value* intermediate, llvm::Value* actual) {
-  if (node_map.find(actual) == node_map.end()) {
-    // RHS must be a pointer to an existing thing in the stack (for now)
-    std::cout << "Check RHS again" << std::endl;
-  }
-  insert_to_map(node_map, intermediate);
-  // Uncomment if decide to tackle listing 3
-  // insert_to_map(pointer);
+void make_edge(NodeMapType& node_map, llvm::Value* from, llvm::Value* to) {
+  insert_to_map(node_map, from);
+  insert_to_map(node_map, to);
   // llvm::outs() << *get_ptr_inst << " points to " << *pointer << "\n";
-  node_map[intermediate].neighbours.push_back(actual);
+  node_map[from].neighbours.push_back(to);
 }
 
-void create_graph(
-    NodeMapType& node_map, llvm::Function* fn) {
+void create_graph(NodeMapType& node_map, llvm::Function* fn) {
   #ifndef NDEBUG
-  std::cout << "Creating graph" << std::endl;
+  // std::cout << "Creating graph" << std::endl;
   #endif
 
   // Initialize initial nodes: vars explicitly initialized on stack
@@ -123,33 +119,22 @@ void create_graph(
     insert_to_map(node_map, value);
   }
 
-  for (llvm::inst_iterator iit = llvm::inst_begin(fn), E = llvm::inst_end(fn); iit != E; ++iit) {
+  for (llvm::inst_iterator iit = llvm::inst_begin(fn), E = llvm::inst_end(fn);
+      iit != E; ++iit) {
+    // Cannot unify the 3 cases as there is no common class/interface for
+    // all instructions that deals with pointers
     if (llvm::StoreInst* store_inst = llvm::dyn_cast<llvm::StoreInst>(&*iit)) {
       llvm::Value* pointer = store_inst->getPointerOperand();
       llvm::Value* value = store_inst->getValueOperand();
-
-      auto val_node_pair = node_map.find(pointer);
-      if (val_node_pair != node_map.end() &&
-          val_node_pair->second.type == PRIMITIVE) {
-        // Already primitive type, skip to the next instruction
-        continue;
-      }
-      insert_to_map(node_map, pointer);
-      insert_to_map(node_map, value);
-      llvm::outs() << *pointer << " points to " << *value << "\n";
-      node_map.find(pointer)->second.neighbours.push_back(value);
+      make_edge(node_map, pointer, value);
     }
-
-    // get_ptr_inst includes getElementPtr and load instructions
-    // They are just intermediate values
     if (auto get_ptr_inst = llvm::dyn_cast<llvm::GetElementPtrInst>(&*iit)) {
       llvm::Value* pointer = get_ptr_inst->getPointerOperand();
-      handle_intermediate_node(node_map, get_ptr_inst, pointer);
+      make_edge(node_map, get_ptr_inst, pointer);
     }
-
     if (auto get_ptr_inst = llvm::dyn_cast<llvm::LoadInst>(&*iit)) {
       llvm::Value* pointer = get_ptr_inst->getPointerOperand();
-      handle_intermediate_node(node_map, get_ptr_inst, pointer);
+      make_edge(node_map, get_ptr_inst, pointer);
     }
   }
   // std::cout << "End creating graph" << std::endl;
@@ -167,7 +152,7 @@ std::vector<llvm::Value*> get_possible_return_values(llvm::Function& fn) {
 }
 
 int main(int argc, char const *argv[]) {
-	llvm::LLVMContext &Context = llvm::getGlobalContext();
+  llvm::LLVMContext &Context = llvm::getGlobalContext();
   llvm::SMDiagnostic Err;
 
   // Step (1) Parse the given IR File
@@ -190,6 +175,9 @@ int main(int argc, char const *argv[]) {
   for (auto& M : modules){
     #ifndef NDEBUG
     std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
+    for (auto& global : M->getGlobalList()) {
+      llvm::outs() << global << "\n";
+    }
     #endif
     for (auto f_it = M->getFunctionList().begin(),
         e = M->getFunctionList().end(); f_it != e; ++f_it) {
@@ -218,13 +206,15 @@ int main(int argc, char const *argv[]) {
         for (auto val_ptr : leaked_vars) {
           llvm::Value* val = check_last_instruction(node_map, val_ptr);
           if (val) {
-            std::cout << "Warning: returning a pointer which points to ";
-            std::cout << val->getName().str() << std::endl;
+            std::cout << "Warning: address of local variable `";
+            std::cout << val->getName().str();
+            std::cout << "` in function `" << func.getName().str();
+            std::cout << "` possibly leaked." << std::endl;
           }
         } // for all leaked vars
       } // for all possible return values
     } // for all functions
   } // for all modules
 
-	return 0;
+  return 0;
 }
