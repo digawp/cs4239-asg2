@@ -20,6 +20,35 @@
 
 
 /**
+ * @brief      Stores all functions name in the modules into the set given.
+ *
+ * @param      fn_set   The function set
+ * @param      modules  The modules
+ *
+ * @return true if there is at least one main function in the modules, false
+ * otherwise.
+ */
+bool store_functions(std::unordered_set<std::string>& fn_set,
+                     std::vector<llvm::Module*>& modules) {
+  bool has_main = false;
+  for (auto& M : modules){
+    #ifndef NDEBUG
+    std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
+    #endif
+    for (auto f_it = M->getFunctionList().begin(),
+        e = M->getFunctionList().end(); f_it != e; ++f_it) {
+      std::string fn_name = f_it->getName().str();
+      has_main = has_main ? has_main : fn_name == "main";
+      #ifndef NDEBUG
+      std::cout << "Declared function: " << fn_name << std::endl;
+      #endif
+      fn_set.insert(fn_name);
+    }
+  }
+  return has_main;
+}
+
+/**
  * @brief      Gets the llvm::Function* of fn_name.
  *
  * This method assumes that there is only one definition per function name
@@ -82,23 +111,15 @@ int main(int argc, char **argv) {
   // Store all functions in a set. The function will be removed from the set if
   // it is found to be used when we trace the call graph.
   std::unordered_set<std::string> functions;
-  for (auto& M : modules){
-    #ifndef NDEBUG
-    std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
-    #endif
-    for (auto f_it = M->getFunctionList().begin(),
-        e = M->getFunctionList().end(); f_it != e; ++f_it) {
-      #ifndef NDEBUG
-      std::cout << "Declared function: " << f_it->getName().str() << std::endl;
-      #endif
-      functions.insert(f_it->getName().str());
-    }
-  }
+  bool has_main = store_functions(functions, modules);
 
   // Initialize queue of functions to be traced
   std::queue<std::string> q;
-  q.push("main");
+  if (has_main) {
+    q.push("main");
+  }
 
+  // Skip the whole loop is there is no main
   while (!q.empty()) {
     std::string function_name = q.front();
     q.pop();
