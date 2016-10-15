@@ -1,7 +1,7 @@
 // Uncomment the following 3 lines for debugging
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
+// #ifdef NDEBUG
+// #undef NDEBUG
+// #endif
 #include <iostream>
 #include <queue>
 #include <unordered_map>
