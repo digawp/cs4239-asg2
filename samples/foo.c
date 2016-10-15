@@ -1,14 +1,24 @@
 #include <stdio.h>
 #include "bar.h"
 
-int lol() {
-	return 1;
+int hehe();
+
+int lol(int x) {
+	if (x == 0) {
+		return 1;
+	}
+	return lol(x-1) - 1;
+}
+
+int hehe() {
+	return 2;
 }
 
 int main(int argc, char const *argv[])
 {
 	hello();
-	if (lol()) {
+	int (*ret_num)(int) = &lol;
+	if (ret_num(2)) {
 		int a = 0;
 	} else {
 		int b = 3122;
