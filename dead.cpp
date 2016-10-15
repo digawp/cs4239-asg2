@@ -1,3 +1,7 @@
+// Uncomment the following 3 lines for debugging
+// #ifdef NDEBUG
+// #undef NDEBUG
+// #endif
 #include <cassert>
 #include <iostream>
 #include <unordered_set>
@@ -38,6 +42,23 @@ llvm::Function* get_function_definition(
   return NULL;
 }
 
+/**
+ * @brief      Gets the module name from function name given.
+ *
+ * Assumption: the function definition exists in one of the modules.
+ *
+ * @param[in]  modules  The modules
+ * @param[in]  fn_name  The function name
+ *
+ * @return     The module name/identifier of the function.
+ */
+std::string get_module_name_from_fn_name(
+    const std::vector<llvm::Module*>& modules, const std::string& fn_name) {
+  llvm::Function* fn = get_function_definition(modules, fn_name);
+  assert(fn);
+  return fn->getParent()->getModuleIdentifier();
+}
+
 int main(int argc, char **argv) {
   llvm::LLVMContext &Context = llvm::getGlobalContext();
   llvm::SMDiagnostic Err;
@@ -62,10 +83,14 @@ int main(int argc, char **argv) {
   // it is found to be used when we trace the call graph.
   std::unordered_set<std::string> functions;
   for (auto& M : modules){
+    #ifndef NDEBUG
     std::cout << "Module name: " << M->getModuleIdentifier() << "\n";
+    #endif
     for (auto f_it = M->getFunctionList().begin(),
         e = M->getFunctionList().end(); f_it != e; ++f_it) {
+      #ifndef NDEBUG
       std::cout << "Declared function: " << f_it->getName().str() << std::endl;
+      #endif
       functions.insert(f_it->getName().str());
     }
   }
@@ -103,8 +128,8 @@ int main(int argc, char **argv) {
 
   functions.erase("main");
 
-  std::cout << "\nDead function names:" << std::endl;
+  std::cout << "Dead function names:" << std::endl;
   for (auto i = functions.begin(); i != functions.end(); ++i) {
-    llvm::outs() << *i << "\n";
+    llvm::outs() << *i << " in " << get_module_name_from_fn_name(modules, *i) << "\n";
   }
 }
